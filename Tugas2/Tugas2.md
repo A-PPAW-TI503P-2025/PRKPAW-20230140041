@@ -1,17 +1,17 @@
 # Tugas 2
 
 1. Tampilan Endpoint Create Book (GET ALL)
-![Tampilan Endpoint Create](ss/GET.png)
+![Tampilan Endpoint Create](SS/GET.png)
 
 2. Tampilan Endpoint Create Book (GET BY ID)
-![Tampilan Endpoint Create](ss/GETBYID.png)
+![Tampilan Endpoint Create](SS/GETBYID.png)
 
 3. Tampilan Endpoint Create Book (POST)
-![Tampilan Endpoint Create](ss/POST.png)
+![Tampilan Endpoint Create](SS/POST.png)
 
 4. Tampilan Endpoint Create Book (PUT)
-![Tampilan Endpoint Create](ss/PUT.png)
+![Tampilan Endpoint Create](SS/PUT.png)
 
 5. Tampilan Endpoint Create Book (DELETE)
-![Tampilan Endpoint Create](ss/DELETE.png)
+![Tampilan Endpoint Create](SS/DELETE.png)
 
