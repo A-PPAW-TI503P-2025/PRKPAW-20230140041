@@ -1,0 +1,922 @@
+langkah-langkah belajar
+
+------BACKEND------------------------------------------------------------------------------------------
+
+1. di models/user tambahkan setelah const {model}
+
+module.exports = (sequelize, DataTypes) => {
+  class User extends Model {
+    static associate(models) {
+      // Langkah 1: tambahkan relasi
+      User.hasMany(models.Presensi, {
+        foreignKey: 'userId',
+        as: 'presensis'
+      });
+    }
+  }
+
+---------------------------------------------------------------------------------------------------------
+2. di models/presensi tambahkan setelah const juga
+
+module.exports = (sequelize, DataTypes) => {
+  class Presensi extends Model {
+    static associate(models) {
+      // Langkah 1: tambahkan relasi belongsTo
+      Presensi.belongsTo(models.User, {
+        foreignKey: 'userId',
+        as: 'user'
+      });
+    }
+  }
+
+---------------------------------------------------------------------------------------------------------
+3. di models.presensi hapus bagian nama
+
+Presensi.init({
+    userId: DataTypes.INTEGER,
+    nama: DataTypes.STRING, // YG INI HAPUS
+    checkIn: DataTypes.DATE,
+    checkOut: DataTypes.DATE,
+  }, {
+    sequelize,
+    modelName: 'Presensi',
+  });
+
+---------------------------------------------------------------------------------------------------------
+4. di terminal node server buat = npx sequelize-cli migration:generate --name remove-nama-from-presensi
+nanti bakal muncul otomatis file di folder migration.
+diisi dengan:
+
+'use strict';
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    // Hapus kolom nama dari tabel Presensis
+    await queryInterface.removeColumn('Presensis', 'nama');
+  },
+
+  async down(queryInterface, Sequelize) {
+    // Kembalikan kolom nama jika di-rollback
+    await queryInterface.addColumn('Presensis', 'nama', {
+      type: Sequelize.STRING,
+      allowNull: false,
+    });
+  }
+};
+
+---------------------------------------------------------------------------------------------------------
+5. jalankan di terminal: npx sequelize-cli db:migrate
+---------------------------------------------------------------------------------------------------------
+
+6. ubah di controllers/presensiControllers:
+
+// Controller Presensi FINAL STEP (tanpa kolom nama)
+const { Presensi, User } = require("../models");
+const { format } = require("date-fns-tz");
+const timeZone = "Asia/Jakarta";
+
+
+// ============================
+// CHECK-IN
+// ============================
+exports.CheckIn = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const namaUser = req.user.nama;
+    const waktuSekarang = new Date();
+
+    // Cek apakah sudah check-in sebelumnya
+    const existingRecord = await Presensi.findOne({
+      where: { userId: userId, checkOut: null },
+    });
+
+    if (existingRecord) {
+      return res.status(400).json({
+        message: "Anda sudah melakukan check-in dan belum check-out.",
+      });
+    }
+
+    // Buat presensi baru (tanpa kolom 'nama')
+    const newRecord = await Presensi.create({
+      userId: userId,
+      checkIn: waktuSekarang,
+    });
+
+    return res.status(201).json({
+      message: `Halo ${namaUser}, check-in berhasil pada pukul ${format(
+        waktuSekarang,
+        "HH:mm:ss",
+        { timeZone }
+      )} WIB`,
+      data: {
+        id: newRecord.id,
+        userId: newRecord.userId,
+        checkIn: newRecord.checkIn,
+        checkOut: null,
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: error.message,
+    });
+  }
+};
+
+
+// ============================
+// CHECK-OUT
+// ============================
+exports.CheckOut = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const namaUser = req.user.nama;
+    const waktuSekarang = new Date();
+
+    // Ambil presensi yang belum check-out
+    const record = await Presensi.findOne({
+      where: { userId: userId, checkOut: null },
+    });
+
+    if (!record) {
+      return res.status(404).json({
+        message: "Anda belum melakukan check-in atau sudah check-out.",
+      });
+    }
+
+    // Update check-out
+    record.checkOut = waktuSekarang;
+    await record.save();
+
+    return res.json({
+      message: `Selamat jalan ${namaUser}, check-out berhasil pada pukul ${format(
+        waktuSekarang,
+        "HH:mm:ss",
+        { timeZone }
+      )} WIB`,
+      data: {
+        id: record.id,
+        userId: record.userId,
+        checkIn: record.checkIn,
+        checkOut: record.checkOut,
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: error.message,
+    });
+  }
+};
+
+
+// ============================
+// DELETE PRESENSI
+// ============================
+exports.deletePresensi = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const presensiId = req.params.id;
+
+    const record = await Presensi.findByPk(presensiId);
+
+    if (!record) {
+      return res.status(200).json({ message: "Data tidak ditemukan atau sudah dihapus" });
+    }
+
+    if (record.userId !== userId) {
+      return res.status(403).json({
+        message: "Akses ditolak; Anda bukan pemilik catatan ini.",
+      });
+    }
+
+    await record.destroy();
+    return res.status(200).json({ message: "Data berhasil dihapus" });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: error.message,
+    });
+  }
+};
+
+
+// ============================
+// UPDATE PRESENSI
+// ============================
+// CATATAN: Karena kolom 'nama' sudah DIHAPUS, maka update nama DIHAPUS TOTAL
+exports.updatePresensi = async (req, res) => {
+  try {
+    const presensiId = req.params.id;
+    const { checkIn, checkOut } = req.body;
+
+    if (checkIn === undefined && checkOut === undefined) {
+      return res.status(400).json({
+        message: "Tidak ada data valid (checkIn/checkOut) untuk diperbarui.",
+      });
+    }
+
+    const record = await Presensi.findByPk(presensiId);
+    if (!record) {
+      return res.status(404).json({
+        message: "Catatan presensi tidak ditemukan.",
+      });
+    }
+
+    record.checkIn = checkIn || record.checkIn;
+    record.checkOut = checkOut || record.checkOut;
+    await record.save();
+
+    return res.json({
+      message: "Data presensi berhasil diperbarui.",
+      data: record,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: error.message,
+    });
+  }
+};
+
+---------------------------------------------------------------------------------------------------------
+7. abistu ganti di middleware/permissionMiddleware
+
+const jwt = require("jsonwebtoken");
+const JWT_SECRET = process.env.JWT_SECRET;
+
+exports.authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (token == null) {
+    return res
+      .status(401)
+      .json({ message: "Akses ditolak. Token tidak disediakan." });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, userPayload) => {
+    if (err) {
+      return res
+        .status(403)
+        .json({ message: "Token tidak valid atau kedaluwarsa." });
+    }
+    req.user = userPayload;
+    next();
+  });
+};
+
+// Middleware 'isAdmin' sekarang akan memeriksa 'role' dari token
+exports.isAdmin = (req, res, next) => {
+  if (req.user && req.user.role === "admin") {
+    next();
+  } else {
+    return res
+      .status(403)
+      .json({ message: "Akses ditolak. Hanya untuk admin." });
+  }
+};
+
+------------------------------------------------------------------------------------------------------------------------------
+
+---------------KLO MAU YG BENAR BGT HAHA PAKE KODE YG INI:-------------------
+
+const jwt = require("jsonwebtoken");
+const JWT_SECRET = 'INI_ADALAH_KUNCI_RAHASIA_ANDA_YANG_SANGAT_AMAN';
+
+exports.authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (token == null) {
+    return res
+      .status(401)
+      .json({ message: "Akses ditolak. Token tidak disediakan." });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, userPayload) => {
+    if (err) {
+      return res
+        .status(403)
+        .json({ message: "Token tidak valid atau kedaluwarsa." });
+    }
+    req.user = userPayload;
+    next();
+  });
+};
+
+// Middleware 'isAdmin' sekarang akan memeriksa 'role' dari token
+exports.isAdmin = (req, res, next) => {
+  if (req.user && req.user.role === "admin") {
+    next();
+  } else {
+    return res
+      .status(403)
+      .json({ message: "Akses ditolak. Hanya untuk admin." });
+  }
+};
+
+
+----------------------------------------------------------------------------------------------------------------------------
+
+-------FRONTEND----------------
+
+1.  buat file baru src/components/Navbar.js
+
+Pastikan kamu sudah install jwt-decode:
+npm install jwt-decode
+
+isi Navbar:
+import React from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { jwtDecode } from "jwt-decode";
+
+
+function Navbar() {
+  const navigate = useNavigate();
+  const token = localStorage.getItem("token");
+
+  let user = null;
+  if (token) {
+    try {
+      user = jwtDecode(token);
+    } catch (error) {
+      console.log("Token tidak valid, logout otomatis");
+      localStorage.removeItem("token");
+      navigate("/login");
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    navigate("/login");
+  };
+
+  return (
+    <nav className="bg-blue-600 text-white px-6 py-3 flex justify-between">
+      <div className="text-xl font-semibold">Web Presensi</div>
+
+      {user && (
+        <div className="flex items-center space-x-6">
+
+          {/* Nama User */}
+          <span className="font-medium">
+            {user.nama}
+          </span>
+
+          {/* Menu Presensi */}
+          <Link to="/presensi" className="hover:underline">
+            Presensi
+          </Link>
+
+          {/* Menu Laporan Admin → hanya admin */}
+          {user.role === "admin" && (
+            <Link to="/reports" className="hover:underline">
+              Laporan Admin
+            </Link>
+          )}
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 px-3 py-1 rounded hover:bg-red-600"
+          >
+            Logout
+          </button>
+        </div>
+      )}
+    </nav>
+  );
+}
+
+export default Navbar;
+
+-------------------------------------------------------------------------------------------------------------
+2. ubah APP.js
+
+import React from "react";
+import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+
+import LoginPage from "./components/LoginPage";
+import RegisterPage from "./components/RegisterPage";
+import DashboardPage from "./components/DashboardPage";
+import Navbar from "./components/Navbar";
+import AttendancePage from "./components/PresensiPage"; 
+import ReportPage from "./components/ReportPage";
+
+function AppWrapper() {
+  const location = useLocation();
+
+  // jangan tampilkan navbar di halaman login & register
+  const hideNavbar = location.pathname === "/login" || location.pathname === "/register";
+
+  return (
+    <>
+      {!hideNavbar && <Navbar />}
+
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/presensi" element={<AttendancePage />} />
+        <Route path="/reports" element={<ReportPage />} />
+
+        <Route path="/" element={<LoginPage />} />
+      </Routes>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AppWrapper />
+    </Router>
+  );
+}
+
+export default App;
+
+--------------------------------------------------------------------------------------------------
+3. buat file src/components/PresensiPage.js
+
+install dulu: npm install axios
+
+isi presensipage.js:
+
+import React, { useState } from "react";
+import axios from "axios";
+
+function PresensiPage() {
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const getToken = () => localStorage.getItem("token");
+
+  const handleCheckIn = async () => {
+    setMessage("");
+    setError("");
+
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+        },
+      };
+
+      const response = await axios.post(
+        "http://localhost:3001/api/presensi/check-in",
+        {},
+        config
+      );
+
+      setMessage(response.data.message);
+    } catch (err) {
+      setError(err.response ? err.response.data.message : "Check-in gagal");
+    }
+  };
+
+  const handleCheckOut = async () => {
+    setMessage("");
+    setError("");
+
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+        },
+      };
+
+      const response = await axios.post(
+        "http://localhost:3001/api/presensi/check-out",
+        {},
+        config
+      );
+
+      setMessage(response.data.message);
+    } catch (err) {
+      setError(err.response ? err.response.data.message : "Check-out gagal");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md text-center">
+        <h2 className="text-3xl font-bold mb-6 text-gray-800">
+          Lakukan Presensi
+        </h2>
+
+        {message && <p className="text-green-600 mb-4">{message}</p>}
+        {error && <p className="text-red-600 mb-4">{error}</p>}
+
+        <div className="flex space-x-4">
+          <button
+            onClick={handleCheckIn}
+            className="w-full py-3 px-4 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700"
+          >
+            Check-In
+          </button>
+
+          <button
+            onClick={handleCheckOut}
+            className="w-full py-3 px-4 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700"
+          >
+            Check-Out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default PresensiPage;
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+4. src/components/ReportPage.js
+
+reportpage:
+
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
+
+function ReportPage() {
+  const [reports, setReports] = useState([]);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const fetchReports = async (query) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      };
+
+      // MENGGUNAKAN API SEBENARNYA
+      const url = query
+        ? `http://localhost:3001/api/reports/daily?nama=${query}`
+        : `http://localhost:3001/api/reports/daily`;
+
+      const response = await axios.get(url, config);
+
+      setReports(response.data.data);
+      setError(null);
+    } catch (err) {
+      setError(
+        err.response ? err.response.data.message : "Gagal memuat laporan"
+      );
+    }
+  };
+
+  useEffect(() => {
+    fetchReports("");
+  }, []);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    fetchReports(searchTerm);
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-8">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">
+        Laporan Presensi Harian
+      </h1>
+
+      <form onSubmit={handleSearchSubmit} className="mb-6 flex space-x-2">
+        <input
+          type="text"
+          placeholder="Cari berdasarkan nama..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-grow px-3 py-2 border border-gray-300 rounded-md"
+        />
+        <button
+          type="submit"
+          className="py-2 px-4 bg-blue-600 text-white font-semibold rounded-md"
+        >
+          Cari
+        </button>
+      </form>
+
+      {error && (
+        <p className="text-red-600 bg-red-100 p-4 rounded-md mb-4">{error}</p>
+      )}
+
+      {!error && (
+        <div className="bg-white shadow-md rounded-lg overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500">
+                  Nama
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500">
+                  Check-In
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500">
+                  Check-Out
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {reports.length > 0 ? (
+                reports.map((presensi) => (
+                  <tr key={presensi.id}>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {presensi.user ? presensi.user.nama : "N/A"}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {new Date(presensi.checkIn).toLocaleString("id-ID")}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {presensi.checkOut
+                        ? new Date(presensi.checkOut).toLocaleString("id-ID")
+                        : "Belum Check-Out"}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan="3"
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
+                    Tidak ada data yang ditemukan.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default ReportPage;
+
+--------------------------------------------------------------------------------------------------------------------------
+5. FRONTEND SELESAI
+
+TAPI KALAU node server nya dijalanin error, ganti file di ROUTES/PRESENSI.JS
+const express = require('express');
+const router = express.Router();
+
+const presensiController = require('../controllers/presensiController');
+const { authenticateToken, isAdmin } = require('../middleware/permissionMiddleware');
+const { body, validationResult } = require('express-validator');
+
+// =========================
+// ROUTES UNTUK PRESENSI
+// =========================
+
+// Semua endpoint presensi wajib login (token)
+router.use(authenticateToken);
+
+// CHECK-IN
+router.post('/check-in', presensiController.CheckIn);
+
+// CHECK-OUT
+router.post('/check-out', presensiController.CheckOut);
+
+// UPDATE PRESENSI
+router.put(
+  '/:id',
+  [
+    body('checkIn')
+      .optional()
+      .isISO8601()
+      .withMessage('checkIn harus berupa format tanggal yang valid'),
+    body('checkOut')
+      .optional()
+      .isISO8601()
+      .withMessage('checkOut harus berupa format tanggal yang valid'),
+  ],
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        message: 'Validasi gagal',
+        errors: errors.array(),
+      });
+    }
+    next();
+  },
+  presensiController.updatePresensi
+);
+
+// DELETE PRESENSI
+router.delete('/:id', presensiController.deletePresensi);
+
+module.exports = router;
+
+--------------------------------------------------------------------------------------------------------------------
+KALAU MASIH ERROR GANTI JUGA ROUTES/REPOTS.JS
+
+const express = require('express');
+const router = express.Router();
+
+const reportController = require('../controllers/reportController');
+const { authenticateToken, isAdmin } = require('../middleware/permissionMiddleware');
+
+// GET DAILY REPORT → HANYA ADMIN
+router.get('/daily', authenticateToken, isAdmin, reportController.getDailyReport);
+
+module.exports = router;
+
+-----------------------------------------------------------------------------------------------------------------------
+
+---------KALAU TAMPILAN AWAL GAADA REGISTER---------------------
+
+ganti file src/components/LoginPage.js:
+
+import React, { useState } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
+
+function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const navigate = useNavigate();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+
+    try {
+      const response = await axios.post("http://localhost:3001/api/auth/login", {
+        email,
+        password,
+      });
+
+      localStorage.setItem("token", response.data.token);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.message || "Login gagal");
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+
+        <h2 className="text-3xl font-bold mb-6 text-center text-gray-800">Login</h2>
+
+        {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
+
+        <form onSubmit={handleLogin}>
+          <label className="block mb-2 text-gray-700">Email:</label>
+          <input
+            type="email"
+            className="w-full p-2 mb-4 border rounded"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <label className="block mb-2 text-gray-700">Password:</label>
+          <input
+            type="password"
+            className="w-full p-2 mb-4 border rounded"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            Login
+          </button>
+        </form>
+
+        {/* Tambahan ini agar REGISTER muncul */}
+        <p className="text-center mt-4 text-gray-700">
+          Belum punya akun?
+          <a href="/register" className="text-blue-600 font-semibold ml-1 hover:underline">
+            Daftar di sini
+          </a>
+        </p>
+
+      </div>
+    </div>
+  );
+}
+
+export default LoginPage;
+
+------------------------------------------------------------------------------------------------------------------------------------------
+INI LoginPage yg lebih lagi
+
+import React, { useState } from 'react';
+import axios from 'axios';
+import { useNavigate, Link } from 'react-router-dom';
+
+function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault(); 
+    setError(null); 
+
+    try {
+      const response = await axios.post('http://localhost:3001/api/auth/login', {
+        email: email,
+        password: password
+      });
+
+      const token = response.data.token;
+      localStorage.setItem('token', token); 
+
+      navigate('/dashboard');
+
+    } catch (err) {
+      setError(err.response ? err.response.data.message : 'Login gagal');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        
+        <h2 className="text-3xl font-bold text-center mb-6 text-gray-800">
+          Login
+        </h2>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              Email:
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm 
+              focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              Password:
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm 
+              focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-2 px-4 bg-blue-600 text-white font-semibold rounded-md 
+            shadow-sm hover:bg-blue-700"
+          >
+            Login
+          </button>
+        </form>
+
+        {error && (
+          <p className="text-red-600 text-sm mt-4 text-center">{error}</p>
+        )}
+
+        {/* Tambahkan tombol Register di bawah */}
+        <p className="text-center mt-6 text-gray-700">
+          Belum punya akun?
+          <Link to="/register" className="text-blue-600 font-semibold ml-1 hover:underline">
+            Daftar di sini
+          </Link>
+        </p>
+
+      </div>
+    </div>
+  );
+}
+
+export default LoginPage;
+
+----------------------------------------------------------------------------------------------------------------------------------------------
