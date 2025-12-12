@@ -14,18 +14,22 @@ module.exports = {
         allowNull: false,
         references: {
           model: 'Users',
-          key: 'id'
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
       },
-      onUpdate: 'CASCADE',
-      onDelete: 'CASCADE'
+      nama: {
+        type: Sequelize.STRING,
+        allowNull: false
       },
       checkIn: {
-        type: Sequelize.DATE,
         allowNull: false,
+        type: Sequelize.DATE
       },
-      checkOut: {
-        type: Sequelize.DATE,
+      checkout: {
         allowNull: true,
+        type: Sequelize.DATE
       },
       createdAt: {
         allowNull: false,
