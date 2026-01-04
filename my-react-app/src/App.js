@@ -1,10 +1,11 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import LoginPage from "./components/LoginPage";
 import RegisterPage from "./components/RegisterPage";
 import DashboardPage from "./components/DashboardPage";
 import PresensiPage from "./components/PresensiPage";
 import ReportPage from "./components/ReportPage";
+import SensorPage from "./components/SensorPage"; 
 import Navbar from "./components/Navbar";
 import "leaflet/dist/leaflet.css";
 
@@ -20,38 +21,18 @@ const MainLayout = ({ children }) => {
 function App() {
   return (
     <Router>
-      <div>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route
-            path="/dashboard"
-            element={
-              <MainLayout>
-                <DashboardPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/presensi"
-            element={
-              <MainLayout>
-                <PresensiPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <MainLayout>
-                <ReportPage />
-              </MainLayout>
-            }
-          />
-          <Route path="/" element={<LoginPage />} />
-        </Routes>
-      </div>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
+        <Route path="/attendance" element={<MainLayout><PresensiPage /></MainLayout>} />
+        <Route path="/reports" element={<MainLayout><ReportPage /></MainLayout>} />
+        <Route path="/monitoring" element={<MainLayout><SensorPage /></MainLayout>} />
+
+        <Route path="/" element={<LoginPage />} />
+      </Routes>
     </Router>
   );
 }
+
 export default App;
